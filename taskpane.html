@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Reply Assistant</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js" type="text/javascript"></script>
+  <style>
+    :root {
+      --bg: #F3F4F6;
+      --surface: #FFFFFF;
+      --surface2: #F9FAFB;
+      --fg: #111827;
+      --fg2: #6B7280;
+      --border: #E5E7EB;
+      --accent: #1D4ED8;
+      --accent-h: #1E40AF;
+      --warn-bg: #FFFBEB;
+      --warn-bd: #F59E0B;
+      --warn-fg: #78350F;
+      --review-bg: #FEF9C3;
+      --review-fg: #713F12;
+      --rec: #DC2626;
+      --ok: #059669;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0; padding: 0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px; line-height: 1.5;
+      background: var(--bg); color: var(--fg);
+      height: 100vh; overflow-x: hidden;
+    }
+
+    /* ── Screens ── */
+    .screen { display: none; flex-direction: column; height: 100vh; }
+    .screen.on { display: flex; }
+
+    /* ── Header ── */
+    .hdr {
+      background: var(--accent); color: #fff;
+      padding: 10px 14px; display: flex; align-items: center;
+      gap: 8px; flex-shrink: 0;
+    }
+    .hdr-icon { font-size: 16px; }
+    .hdr-title { font-size: 14px; font-weight: 600; flex: 1; }
+    .hdr-settings {
+      background: none; border: none; color: rgba(255,255,255,.8);
+      cursor: pointer; font-size: 16px; padding: 2px 4px;
+      border-radius: 4px; line-height: 1;
+    }
+    .hdr-settings:hover { background: rgba(255,255,255,.15); color: #fff; }
+
+    /* ── Scrollable body ── */
+    .body { flex: 1; overflow-y: auto; padding: 12px; }
+
+    /* ── Progress ── */
+    .progress {
+      display: flex; align-items: center; gap: 4px;
+      margin-bottom: 12px;
+    }
+    .pdot {
+      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      background: var(--border); color: var(--fg2);
+      transition: all .2s;
+    }
+    .pdot.act { background: var(--accent); color: #fff; }
+    .pdot.done { background: var(--ok); color: #fff; }
+    .pline { flex: 1; height: 2px; background: var(--border); transition: background .2s; }
+    .pline.done { background: var(--ok); }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px;
+      margin-bottom: 10px;
+    }
+    .lbl {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--fg2); margin-bottom: 8px;
+    }
+    .summary {
+      font-size: 12px; color: var(--fg2); line-height: 1.5;
+      border-left: 3px solid var(--accent); padding-left: 10px;
+      margin-bottom: 12px;
+    }
+    .badge {
+      display: inline-flex; padding: 2px 8px; border-radius: 12px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; margin-bottom: 10px;
+    }
+    .b-reply   { background: #DCFCE7; color: #15803D; }
+    .b-action  { background: #DBEAFE; color: #1D4ED8; }
+    .b-waiting { background: #FEF3C7; color: #92400E; }
+    .b-fyi     { background: var(--surface2); color: var(--fg2); }
+
+    /* ── Question cards ── */
+    .qcard {
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px; margin-bottom: 8px; background: var(--surface2);
+    }
+    .qtext { font-size: 12px; font-weight: 500; color: var(--fg); margin-bottom: 4px; }
+    .qwhy  { font-size: 11px; color: var(--fg2); font-style: italic; margin-bottom: 7px; }
+    .arow  { display: flex; gap: 6px; align-items: flex-start; }
+    .arow textarea {
+      flex: 1; border: 1px solid var(--border); border-radius: 5px;
+      padding: 7px 9px; font-family: inherit; font-size: 12px;
+      color: var(--fg); background: var(--surface); resize: vertical;
+      min-height: 52px; outline: none; transition: border-color .15s;
+    }
+    .arow textarea:focus { border-color: var(--accent); }
+    .mic-btn {
+      width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--fg2); cursor: pointer; display: flex;
+      align-items: center; justify-content: center; padding: 0;
+      transition: all .15s;
+    }
+    .mic-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .mic-btn.rec {
+      background: var(--rec); color: #fff; border-color: var(--rec);
+      animation: pulse .9s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.12)} }
+
+    /* ── Buttons ── */
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+      width: 100%; padding: 9px; border-radius: 6px; border: none;
+      font-family: inherit; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background .15s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-h); }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-ghost {
+      background: var(--surface); color: var(--fg2);
+      border: 1px solid var(--border); font-size: 12px; padding: 7px;
+    }
+    .btn-ghost:hover { background: var(--surface2); color: var(--fg); }
+    .btn-success { background: var(--ok); color: #fff; }
+    .btn-success:hover { background: #047857; }
+    .btn-row { display: flex; gap: 6px; margin-bottom: 6px; }
+    .btn-row .flex1 { flex: 1; }
+
+    /* ── Warnings / draft ── */
+    .warn-bar {
+      background: var(--warn-bg); border: 1px solid var(--warn-bd);
+      border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;
+      color: var(--warn-fg); font-size: 11px; font-weight: 600;
+      display: flex; align-items: flex-start; gap: 6px; line-height: 1.4;
+    }
+    .review-hint {
+      background: var(--review-bg); border: 1px solid var(--warn-bd);
+      border-radius: 6px; padding: 7px 10px; margin-bottom: 10px;
+      font-size: 11px; color: var(--review-fg);
+    }
+    .draft-body {
+      font-size: 12px; line-height: 1.7; white-space: pre-wrap;
+      color: var(--fg); font-family: inherit; word-break: break-word;
+    }
+    .draft-body mark {
+      background: var(--review-bg); color: var(--review-fg);
+      padding: 1px 3px; border-radius: 2px; font-weight: 600;
+    }
+
+    /* ── Loading ── */
+    .loading {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 10px; padding: 32px 16px; color: var(--fg2); font-size: 12px;
+      text-align: center;
+    }
+    .spinner {
+      width: 24px; height: 24px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    /* ── Settings ── */
+    .settings-form { padding: 4px 0; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block; font-size: 11px; font-weight: 600;
+      color: var(--fg2); margin-bottom: 5px; text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .form-group input, .form-group textarea {
+      width: 100%; border: 1px solid var(--border); border-radius: 5px;
+      padding: 8px 10px; font-family: inherit; font-size: 12px;
+      color: var(--fg); background: var(--surface2); outline: none;
+      transition: border-color .15s;
+    }
+    .form-group input:focus, .form-group textarea:focus { border-color: var(--accent); }
+    .form-group textarea { resize: vertical; min-height: 56px; }
+    .hint { font-size: 11px; color: var(--fg2); margin-top: 4px; line-height: 1.4; }
+
+    /* ── No voice note ── */
+    .no-voice { font-size: 11px; color: var(--fg2); text-align: center; padding: 4px 0; }
+
+    /* ── Streaming cursor ── */
+    .cursor {
+      display: inline-block; width: 2px; height: 12px;
+      background: var(--accent); margin-left: 1px;
+      vertical-align: middle; animation: blink .8s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ── Status ── */
+    #statusBar {
+      font-size: 11px; color: var(--fg2); text-align: center;
+      padding: 6px; flex-shrink: 0;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════ SETTINGS SCREEN ════════════════════════════════ -->
+<div class="screen on" id="screenSettings">
+  <div class="hdr">
+    <span class="hdr-icon">⚙️</span>
+    <span class="hdr-title">Setup</span>
+  </div>
+  <div class="body">
+    <p style="color:var(--fg2);font-size:12px;margin:0 0 14px;line-height:1.5">
+      Paste the URL of your Power Automate HTTP trigger flow. Save once — stored locally.
+    </p>
+    <div class="settings-form">
+      <div class="form-group">
+        <label>Power Automate URL</label>
+        <textarea id="settingsUrl" rows="3"
+          placeholder="https://prod-XX.westeurope.logic.azure.com/workflows/…"></textarea>
+        <div class="hint">Create the flow in Power Automate → "When an HTTP request is received". Paste the POST URL here.</div>
+      </div>
+      <div class="form-group">
+        <label>Your name (for drafts)</label>
+        <input id="settingsName" type="text" placeholder="e.g. Paweł">
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="saveSettings()">Save and start →</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════ MAIN SCREEN ════════════════════════════════ -->
+<div class="screen" id="screenMain">
+  <div class="hdr">
+    <span class="hdr-icon">✉️</span>
+    <span class="hdr-title">Email Reply Assistant</span>
+    <button class="hdr-settings" onclick="openSettings()" title="Settings">⚙</button>
+  </div>
+
+  <!-- Progress dots -->
+  <div class="body" id="mainBody">
+
+    <div class="progress">
+      <div class="pdot act" id="pd1">1</div>
+      <div class="pline" id="pl1"></div>
+      <div class="pdot" id="pd2">2</div>
+      <div class="pline" id="pl2"></div>
+      <div class="pdot" id="pd3">3</div>
+    </div>
+
+    <!-- Steps rendered dynamically -->
+    <div id="stepContent"></div>
+
+  </div>
+  <div id="statusBar"></div>
+</div>
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────
+let flowUrl    = '';
+let userName   = '';
+let emailData  = { subject: '', from: '', body: '' };
+let analysis   = null;
+let draftText  = '';
+let micRec     = null;
+let activeMic  = null;
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+// ── Office init ────────────────────────────────────────────────────────
+Office.onReady(() => {
+  loadSettings();
+  const stored = tryGet('emailReplyUrl');
+  if (stored) {
+    showScreen('screenMain');
+    readEmail();
+  } else {
+    showScreen('screenSettings');
+  }
+});
+
+// ── Settings ───────────────────────────────────────────────────────────
+function loadSettings() {
+  flowUrl  = tryGet('emailReplyUrl')  || '';
+  userName = tryGet('emailReplyName') || '';
+  document.getElementById('settingsUrl').value  = flowUrl;
+  document.getElementById('settingsName').value = userName;
+}
+
+function saveSettings() {
+  const url  = document.getElementById('settingsUrl').value.trim();
+  const name = document.getElementById('settingsName').value.trim();
+  if (!url) { alert('Please enter the Power Automate URL.'); return; }
+  trySet('emailReplyUrl',  url);
+  trySet('emailReplyName', name);
+  flowUrl  = url;
+  userName = name;
+  showScreen('screenMain');
+  readEmail();
+}
+
+function openSettings() {
+  loadSettings();
+  showScreen('screenSettings');
+}
+
+// ── Read current email via Office.js ──────────────────────────────────
+function readEmail() {
+  setStatus('Reading email…');
+  showStep(1, '<div class="loading"><div class="spinner"></div>Reading email…</div>');
+
+  const item = Office.context.mailbox.item;
+  emailData.subject = item.subject || '(no subject)';
+  emailData.from    = item.from
+    ? `${item.from.displayName} <${item.from.emailAddress}>`
+    : 'Unknown';
+
+  item.body.getAsync(Office.CoercionType.Text, (result) => {
+    if (result.status === Office.AsyncResultStatus.Succeeded) {
+      emailData.body = result.value.trim();
+      renderStep1();
+      setStatus('');
+    } else {
+      showStep(1, errMsg('Could not read email body. Try reopening the panel.'));
+      setStatus('Error reading email');
+    }
+  });
+}
+
+// ── Step 1: Show email preview + Analyze button ────────────────────────
+function renderStep1() {
+  const preview = emailData.body.length > 300
+    ? emailData.body.substring(0, 300) + '…'
+    : emailData.body;
+
+  showStep(1, `
+    <div class="card">
+      <div class="lbl">Email loaded</div>
+      <div style="font-size:12px;color:var(--fg);font-weight:600;margin-bottom:2px">${esc(emailData.subject)}</div>
+      <div style="font-size:11px;color:var(--fg2);margin-bottom:10px">From: ${esc(emailData.from)}</div>
+      <div style="font-size:11px;color:var(--fg2);line-height:1.5;white-space:pre-wrap;
+           max-height:100px;overflow:hidden;position:relative">
+        ${esc(preview)}
+        <div style="position:absolute;bottom:0;left:0;right:0;height:30px;
+             background:linear-gradient(transparent,var(--surface))"></div>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="analyzeEmail()">Analyze →</button>
+  `);
+  setDot(1, 'act');
+}
+
+// ── Step 2: Analyze via Power Automate ────────────────────────────────
+async function analyzeEmail() {
+  setStatus('Analyzing…');
+  setDot(1, 'done');
+  setDot(2, 'act');
+  showStep(2, '<div class="loading"><div class="spinner"></div>Analyzing email…</div>');
+
+  try {
+    const res = await callFlow({
+      mode: 'analyze',
+      subject: emailData.subject,
+      from:    emailData.from,
+      body:    emailData.body
+    });
+    analysis = res;
+    renderStep2();
+    setStatus('');
+  } catch (e) {
+    // Fallback: skip analysis, go straight to draft
+    analysis = { status: 'REPLY', summary: '', questions: [] };
+    renderStep2();
+    setStatus('Analysis failed — proceeding without questions');
+  }
+}
+
+// ── Render Step 2: Questions ───────────────────────────────────────────
+function renderStep2() {
+  const qs      = Array.isArray(analysis?.questions) ? analysis.questions : [];
+  const status  = (analysis?.status || 'REPLY').toUpperCase();
+  const bClass  = { REPLY:'b-reply', ACTION:'b-action', WAITING:'b-waiting', FYI:'b-fyi' }[status] || 'b-fyi';
+  const hasQ    = qs.length > 0;
+
+  const qHTML = qs.map((q, i) => `
+    <div class="qcard">
+      <div class="qtext">${esc(q.question)}</div>
+      ${q.why ? `<div class="qwhy">${esc(q.why)}</div>` : ''}
+      <div class="arow">
+        <textarea id="ans${i}" placeholder="Your answer…" rows="2"></textarea>
+        ${SR ? `<button class="mic-btn" data-i="${i}" title="Voice" onclick="toggleMic(this,${i})">${micSVG()}</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  showStep(2, `
+    <div class="card">
+      <span class="badge ${bClass}">${status}</span>
+      ${analysis?.summary ? `<div class="summary">${esc(analysis.summary)}</div>` : ''}
+      ${hasQ ? `
+        <div class="lbl">Context needed</div>
+        ${qHTML}
+        ${!SR ? '<p class="no-voice">Voice not available — type your answers.</p>' : ''}
+      ` : `
+        <p style="font-size:12px;color:var(--fg2);margin:0">Enough context — ready to draft.</p>
+      `}
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost flex1" onclick="goBack()">← Back</button>
+      <button class="btn btn-primary flex1" onclick="generateDraft()">
+        ${hasQ ? 'Draft →' : 'Generate draft →'}
+      </button>
+    </div>
+  `);
+}
+
+function goBack() {
+  setDot(2, '2');
+  setDot(1, 'act');
+  renderStep1();
+}
+
+// ── Voice ──────────────────────────────────────────────────────────────
+function toggleMic(btn, idx) {
+  if (activeMic && activeMic !== btn) stopMic();
+  if (btn.classList.contains('rec')) { stopMic(); return; }
+  startMic(btn, idx);
+}
+
+function startMic(btn, idx) {
+  const ta = document.getElementById('ans' + idx);
+  if (!ta || !SR) return;
+  micRec = new SR();
+  micRec.continuous = false;
+  micRec.interimResults = true;
+  micRec.lang = navigator.language || 'en-US';
+  activeMic = btn;
+  btn.classList.add('rec');
+  const base = ta.value.trim();
+  micRec.onresult = e => {
+    let fin = base, intr = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) fin = (fin ? fin + ' ' : '') + e.results[i][0].transcript.trim();
+      else intr = e.results[i][0].transcript;
+    }
+    ta.value = fin + (intr ? ' ' + intr : '');
+  };
+  micRec.onend  = () => { btn.classList.remove('rec'); activeMic = null; micRec = null; };
+  micRec.onerror = ev => {
+    btn.classList.remove('rec'); activeMic = null; micRec = null;
+    if (ev.error === 'not-allowed') setStatus('Microphone access denied');
+  };
+  try { micRec.start(); } catch { btn.classList.remove('rec'); activeMic = null; }
+}
+
+function stopMic() {
+  if (micRec) { try { micRec.stop(); } catch {} micRec = null; }
+  if (activeMic) { activeMic.classList.remove('rec'); activeMic = null; }
+}
+
+// ── Step 3: Generate draft ─────────────────────────────────────────────
+async function generateDraft() {
+  stopMic();
+  setDot(2, 'done');
+  setDot(3, 'act');
+
+  const qs = Array.isArray(analysis?.questions) ? analysis.questions : [];
+  const context = qs.map((q, i) => {
+    const v = (document.getElementById('ans' + i)?.value || '').trim();
+    return v ? { question: q.question, answer: v } : null;
+  }).filter(Boolean);
+
+  // Show streaming placeholder
+  showStep(3, `
+    <div class="warn-bar">${warnSVG()} AI DRAFT — NOT FOR SENDING</div>
+    <div class="card">
+      <div class="lbl">Draft reply</div>
+      <div class="draft-body" id="draftBody"><span class="cursor"></span></div>
+    </div>
+  `);
+
+  setStatus('Generating draft…');
+
+  try {
+    draftText = await callFlowStreaming({
+      mode:    'draft',
+      subject: emailData.subject,
+      from:    emailData.from,
+      body:    emailData.body,
+      context,
+      userName
+    });
+    renderStep3();
+    setStatus('');
+    setDot(3, 'done');
+  } catch (e) {
+    const el = document.getElementById('draftBody');
+    if (el) el.innerHTML = '<span style="color:var(--fg2)">Error — try again.</span>';
+    setStatus('Draft failed');
+    appendBtn('btn-ghost', '← Back', 'showStep(2, \'\')');
+  }
+}
+
+function renderStep3() {
+  const hasReview = draftText.includes('[REVIEW THIS]');
+  const html = esc(draftText).replace(/\[REVIEW THIS\]/g, '<mark>[REVIEW THIS]</mark>');
+
+  showStep(3, `
+    <div class="warn-bar">${warnSVG()} AI DRAFT — NOT FOR SENDING. Review before sending.</div>
+    ${hasReview ? `<div class="review-hint"><strong>Yellow = possible commitment.</strong> Review each one carefully.</div>` : ''}
+    <div class="card">
+      <div class="lbl">Draft reply</div>
+      <div class="draft-body">${html}</div>
+    </div>
+    <button class="btn btn-success" onclick="openReply()" style="margin-bottom:6px">
+      Open reply in Outlook →
+    </button>
+    <div class="btn-row">
+      <button class="btn btn-ghost flex1" onclick="regenerate()">↺ Regenerate</button>
+      <button class="btn btn-ghost flex1" onclick="resetAll()">Start over</button>
+    </div>
+  `);
+}
+
+// ── Open reply in Outlook pre-filled with draft ────────────────────────
+function openReply() {
+  const htmlBody = draftText
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+    .replace(/\[REVIEW THIS\]/g, '<span style="background:#FEF9C3;color:#713F12;padding:1px 3px;font-weight:700">[REVIEW THIS]</span>');
+
+  Office.context.mailbox.item.displayReplyForm({
+    htmlBody: `<p>${htmlBody}</p><p><br></p>`
+  });
+}
+
+function regenerate() {
+  setDot(3, '3');
+  generateDraft();
+}
+
+function resetAll() {
+  stopMic();
+  draftText = ''; analysis = null;
+  setDot(1, 'act'); setDot(2, '2'); setDot(3, '3');
+  renderStep1();
+}
+
+// ── Call Power Automate flow ───────────────────────────────────────────
+async function callFlow(payload) {
+  const res = await fetch(flowUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error('Flow error: ' + res.status);
+  return res.json();
+}
+
+// For streaming: Power Automate doesn't stream, so we poll the DOM while waiting
+async function callFlowStreaming(payload) {
+  // Show progress animation
+  const draftEl = document.getElementById('draftBody');
+  let dots = 0;
+  const timer = setInterval(() => {
+    dots = (dots + 1) % 4;
+    if (draftEl) draftEl.innerHTML = '<span style="color:var(--fg2)">Generating' + '.'.repeat(dots) + '</span>';
+  }, 400);
+
+  try {
+    const res = await fetch(flowUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    clearInterval(timer);
+    if (!res.ok) throw new Error('Flow error: ' + res.status);
+    const data = await res.json();
+    return data.draft || data.text || data.response || '';
+  } catch (e) {
+    clearInterval(timer);
+    throw e;
+  }
+}
+
+// ── UI helpers ─────────────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+}
+
+function showStep(n, html) {
+  document.getElementById('stepContent').innerHTML = html;
+}
+
+function setDot(n, state) {
+  const dot  = document.getElementById('pd' + n);
+  const line = document.getElementById('pl' + n);
+  if (state === 'act')  { dot.className = 'pdot act'; dot.textContent = n; }
+  else if (state === 'done') { dot.className = 'pdot done'; dot.textContent = '✓'; if(line) line.className = 'pline done'; }
+  else { dot.className = 'pdot'; dot.textContent = n; if(line) line.className = 'pline'; }
+}
+
+function setStatus(msg) {
+  document.getElementById('statusBar').textContent = msg;
+}
+
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function errMsg(msg) {
+  return `<div class="card"><p style="color:var(--fg2);font-size:12px;margin:0">${esc(msg)}</p></div>`;
+}
+
+function micSVG() {
+  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+    <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+  </svg>`;
+}
+
+function warnSVG() {
+  return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px">
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+  </svg>`;
+}
+
+function tryGet(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }
+function trySet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+</script>
+</body>
+</html>
